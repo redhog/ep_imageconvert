@@ -1,0 +1,9 @@
+{
+  "name": "ep_imageconvert",
+  "description": "Convert and cut images on the fly for download",
+  "version": "0.0.1",
+  "author": "RedHog (Egil Moeller) <egil.moller@freecode.no>",
+  "contributors": [],
+  "dependencies": { "formidable": "latest", "ep_fileupload": "latest" },
+  "engines": { "node": ">= 0.4.1 < 0.7.0" }
+}

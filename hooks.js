@@ -1,10 +1,7 @@
-import("etherpad.log");
-import("faststatic");
-import("etherpad.utils.*");
-import("etherpad.globals.*");
-import("dispatch.{Dispatcher,PrefixMatcher,forward}");
-import("plugins.imageConvert.controllers.imageConvert");
+var path = require('path');
+var express = require('express');
+var controller = require("./controllers/imageConvert");
 
-function handlePath() {
-  return [[PrefixMatcher('/ep/imageConvert/'), forward(imageConvert)]];
+exports.expressServer = function (hook_name, args, cb) {
+  args.app.get('/imageConvert/:filename(*)', controller.onRequest);
 }

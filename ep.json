@@ -1,0 +1,10 @@
+{
+  "parts": [
+    {
+      "name": "fileupload",
+      "hooks": {
+	"expressCreateServer": "ep_imageconvert/hooks:expressServer"
+      }
+    }
+  ]
+}

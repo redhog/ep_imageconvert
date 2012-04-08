@@ -14,117 +14,105 @@
  * limitations under the License.
  */
 
-import("faststatic");
-import("fileutils");
-import("dispatch.{Dispatcher,PrefixMatcher,forward}");
 
-import("etherpad.utils.*");
-import("etherpad.globals.*");
-import("etherpad.log");
-import("fastJSON");
+var path = require('path');
+var fs = require('fs');
+var child_process = require('child_process');
+var plugins = require('ep_etherpad-lite/static/js/pluginfw/plugins');
 
-jimport("java.io.File",
-        "java.io.DataInputStream", 
-        "java.io.FileInputStream",
-        "java.lang.Byte",
-        "java.io.FileReader",
-        "java.io.BufferedReader",
-        "java.security.MessageDigest",
-        "java.lang.Runtime",
-        "net.appjet.common.util.BetterFile",
-	"java.lang.ProcessBuilder",
-	"java.lang.Process",
-	"java.io.InputStreamReader"
-	);
-
-
-function getPages(filename) {
-  var proc;
-  proc = ProcessBuilder("src/plugins/imageConvert/getPages.sh", filename).start();
-  var procStdout = BufferedReader(new InputStreamReader(proc.getInputStream()));
-  var pages = parseInt(procStdout.readLine());
-  proc.waitFor();
-  return {pages:pages};
+function prepareExecArgs(args) {
+  if (!args.length) return "";
+  return "'" + args.join("' '") + "'"
 }
 
-function getSize(filename, page) {
-  var proc;
-  proc = ProcessBuilder("src/plugins/imageConvert/getSize.sh", filename, page + 1).start();
-  var procStdout = BufferedReader(new InputStreamReader(proc.getInputStream()));
-  var w = parseFloat(procStdout.readLine());
-  var h = parseFloat(procStdout.readLine());
-  proc.waitFor();
-  return {w:w, h:h}
+function getPages(filename, cb) {
+  child_process.exec(
+    prepareExecArgs([path.normalize(path.join(__dirname, "..", "getPages.sh")), filename]),
+    function (err, stdout, stderr) {
+      if (err) return cb(err);
+      return cb(null, {pages:parseInt(stdout)});
+    }
+  );
 }
 
-function convertImage(inFileName, page, outFileName, offset, size, pixelOffset, pixelSize) {
-  if (File(outFileName).exists()) return;
-  var proc;
-  if (inFileName.split(".").pop().toLowerCase() == 'pdf') {
-    var pageSize = getSize(inFileName, page);
+function getSize(filename, page, cb) {
+  child_process.exec(
+    prepareExecArgs([path.normalize(path.join(__dirname, "..", "getSize.sh")), filename, page+1]),
+    function (err, stdout, stderr) {
+      if (err) return cb(err);
+      var lines = stdout.split("\n");
+        return cb(null, {w: parseFloat(lines[0]),
+                         h: parseFloat(lines[1])});
+    }
+  );
+}
 
-    var dpi = {x: pixelSize.w * 72.0 / size.w,
-	       y: pixelSize.h * 72.0 / size.h};
+function convertImage(inFileName, page, outFileName, offset, size, pixelOffset, pixelSize, cb) {
+  fs.stat(outFileName, function (err, stat) {
+    if (!err) return cb(null);
 
-    proc = ProcessBuilder("src/plugins/imageConvert/convertImage.sh",
-			  inFileName,
-			  outFileName,
-			  page + 1,
-			  dpi.x, dpi.y,
-			  pixelOffset.x, pixelOffset.y,
-			  pixelSize.w, pixelSize.h);
+    var cmd;
+
+    if (inFileName.split(".").pop().toLowerCase() == 'pdf') {
+      var dpi = {x: pixelSize.w * 72.0 / size.w,
+                 y: pixelSize.h * 72.0 / size.h};
+
+      cmd = [path.normalize(path.join(__dirname, "..", "convertImage.sh")),
+             inFileName,
+             outFileName,
+             page + 1,
+             dpi.x, dpi.y,
+             pixelOffset.x, pixelOffset.y,
+             pixelSize.w, pixelSize.h];
+    } else {
+      cmd = ["convert",
+             "-crop",
+             "" + size.w + "x" + size.h + "+" + offset.x + "+" + offset.y,
+             "-scale",
+             "" + pixelSize.w + "x" + pixelSize.w,
+             inFileName + "["+page+"]",
+             outFileName];
+    }
+
+    child_process.exec(
+      prepareExecArgs(cmd),
+      function (err, stdout, stderr) {
+          return cb(err);
+      }
+    );
+  });
+}
+
+exports.onRequest = function(req, res) {
+  var filePath =  path.normalize(path.join(plugins.plugins.ep_fileupload.package.path, "upload", req.params.filename))
+  var page = req.query.p === undefined ? 0 : parseInt(req.query.p);
+  var offset = {x:(req.query.x === undefined) ? 0 : parseFloat(req.query.x),
+		y:(req.query.y === undefined) ? 0 : parseFloat(req.query.y)};
+  var size = {w:(req.query.w === undefined) ? 0 : parseFloat(req.query.w),
+	      h:(req.query.h === undefined) ? 0 : parseFloat(req.query.h)};
+  var pixelOffset = {x:(req.query.px === undefined) ? 0 : parseFloat(req.query.px),
+		     y:(req.query.py === undefined) ? 0 : parseFloat(req.query.py)};
+  var pixelSize = {w:(req.query.pw === undefined) ? 0 : parseFloat(req.query.pw),
+		   h:(req.query.ph === undefined) ? 0 : parseFloat(req.query.ph)};
+
+  if (req.query.action == "getPages") {
+    getPages(filePath, function (err, pages) {
+      res.send(JSON.stringify(pages), {'Content-Type': 'text/plain'});
+    });
+  } else if (req.query.action == "getSize") {
+    getSize(filePath, page, function (err, imageSize) {
+      res.send(JSON.stringify(imageSize), {'Content-Type': 'text/plain'});
+    });
   } else {
-    proc = ProcessBuilder("convert",
-			  "-crop",
-			  "" + size.w + "x" + size.h + "+" + offset.x + "+" + offset.y,
-			  "-scale",
-			  "" + pixelSize.w + "x" + pixelSize.w,
-			  inFileName + "["+page+"]",
-			  outFileName);
-  }
-  proc.start().waitFor();
-}
-
-function onRequest() {
-  var path = "src/plugins/fileUpload/upload/" + request.path.toString().slice("/ep/imageConvert/".length);  
-  var page = request.params.p === undefined ? 0 : parseInt(request.params.p);
-  var offset = {x:(request.params.x === undefined) ? 0 : parseFloat(request.params.x),
-		y:(request.params.y === undefined) ? 0 : parseFloat(request.params.y)};
-  var size = {w:(request.params.w === undefined) ? 0 : parseFloat(request.params.w),
-	      h:(request.params.h === undefined) ? 0 : parseFloat(request.params.h)};
-  var pixelOffset = {x:(request.params.px === undefined) ? 0 : parseFloat(request.params.px),
-		     y:(request.params.py === undefined) ? 0 : parseFloat(request.params.py)};
-  var pixelSize = {w:(request.params.pw === undefined) ? 0 : parseFloat(request.params.pw),
-		   h:(request.params.ph === undefined) ? 0 : parseFloat(request.params.ph)};
-
-  if (request.params.action == "getPages") {
-    var pages = getPages(path);
-    response.setContentType("text/plain");
-    response.write(fastJSON.stringify(pages));
-  } else if (request.params.action == "getSize") {
-    var imageSize = getSize(path, page);
-    response.setContentType("text/plain");
-    response.write(fastJSON.stringify(imageSize));
-  } else {
-    var outFileName = path.split(".");
+    var outFileName = filePath.split(".");
     var extension = outFileName.pop();
     outFileName.push("" + page + ":" + offset.x + "," +  offset.y + ":" + size.w + "," +  size.h + ":" + pixelSize.w + "," +  pixelSize.h);
     outFileName.push("png");
     outFileName = outFileName.join(".");
 
-    convertImage(path, page, outFileName, offset, size, pixelOffset, pixelSize);
-
-    response.setContentType("image/png");
-    response.alwaysCache();
-
-    var file = FileInputStream(File(outFileName));
-    response.writeBytes(BetterFile.getStreamBytes(file));
-    file.close();
-
+    convertImage(filePath, page, outFileName, offset, size, pixelOffset, pixelSize, function (err) {
+      res.contentType("image/png");
+      res.sendfile(outFileName)
+    });
   }
-
-  if (request.acceptsGzip) {
-    response.setGzip(true);
-  }
-  return true;
 }
