@@ -22,6 +22,8 @@ var plugins = require('ep_etherpad-lite/static/js/pluginfw/plugins');
 
 function prepareExecArgs(args) {
   if (!args.length) return "";
+  for (var i in args)
+    args[i].replace(/'|\\/g,'');
   return "'" + args.join("' '") + "'"
 }
 
