@@ -1,9 +1,21 @@
 {
   "name": "ep_imageconvert",
   "description": "Convert and cut images on the fly for download",
-  "version": "0.0.3",
-  "author": "RedHog (Egil Moeller) <egil.moller@freecode.no>",
-  "contributors": ["johnyma22 (John McLear) <john@mclear.co.uk>"],
-  "dependencies": { "formidable": "latest", "ep_fileupload": "latest" },
-  "engines": { "node": ">= 0.4.1 < 0.7.0" }
+  "version": "0.0.4",
+  "author": {
+    "name": "RedHog",
+    "email": "egil.moller@freecode.no",
+    "url": "Egil Moeller"
+  },
+  "contributors": [
+    {
+      "name": "John McLear",
+      "email": "john@mclear.co.uk",
+      "url": "http://mclear.co.uk"
+    }
+  ],
+  "peerDependencies": {
+    "formidable": "*",
+    "ep_fileupload": "*"
+  } 
 }
